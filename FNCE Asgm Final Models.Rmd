@@ -1,0 +1,663 @@
+---
+title: "FNCE Asgm Final Models"
+output: html_document
+date: "2025-05-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Read Data (N = 37)
+```{r}
+library(xts)
+index_return <- read.csv("Log return Stock Index Data (USD).csv", header = TRUE)
+index_return$Name <- as.Date(index_return$Name, format = "%d/%m/%Y")
+index_return <- as.xts(index_return)
+```
+
+Training and Test Data
+```{r}
+index_return_train_and_test <- index_return[c(2610:6586),] #Jan 2010 (3977 data)
+index_return_train <- index_return[c(2610:5479),] #Jan 2010 - Dec 2020 (2870 data)
+index_return_test <- index_return[c(5480:6586),] #Jan 2021 - Mar 2025 (1107 data)
+```
+
+FINAL MODELS
+
+Model 1: MA(1)-DCC-GARCH(1,1)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+
+#Refit Specifications
+#refit <- c(0, 1000, 1107)
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return and covariance matrix
+model1_fcov_10 <- c()
+model1_fret_10 <- c()
+
+#univariate volatility model specification (such that dccfit does not try to fit univariate and multivariate simultaneously)
+uspec.n <- multispec(replicate(37, ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), 
+                                              mean.model = list(armaOrder = c(0, 1)),
+                                              distribution.model = "std"))) #specifies GARCH(1,1) model, and replicate 37 times
+#specifying correlation specifications
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), model = "DCC", distribution = "mvt") #most standard 'dccOrder = c(1, 1)' specification
+
+#loop for DCC model
+for (i in 1:refit.num) {
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  dccfit.dummy <- dccfit(spec1, data = index_return_train_and_test, out.sample = out.sample.length, 
+                 fit.control = list(eval.se = FALSE),
+                 solver = "solnp") #list(eval.se = FALSE) to drastically reduce computational time
+  f_dcc_roll <- dccforecast(dccfit.dummy, n.ahead = 1, n.roll = n.roll.length)
+  model1_fcov_10 <- append(model1_fcov_10, f_dcc_roll@mforecast$H)
+  for (j in 1:(n.roll.length + 1)) {
+    model1_fret_10 <- append(model1_fret_10, list(f_dcc_roll@mforecast$mu[, , j]))
+  }
+}
+```
+
+Model 2: DCC-GARCH(1,1) (norm, mvt)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+
+#Refit Specifications
+#refit <- c(0, 1000, 1107)
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return and covariance matrix
+model2_fcov_10 <- c()
+model2_fret_10 <- c()
+
+
+#univariate volatility model specification (such that dccfit does not try to fit univariate and multivariate simultaneously)
+uspec.n <- multispec(replicate(37, ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), 
+                                              mean.model = list(armaOrder = c(0, 0)),
+                                              distribution.model = "norm"))) #specifies GARCH(1,1) model, and replicate 37 times
+#specifying correlation specifications
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), model = "DCC", distribution = "mvt") #most standard 'dccOrder = c(1, 1)' specification
+
+#loop for DCC model
+for (i in 1:refit.num) {
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  dccfit.dummy <- dccfit(spec1, data = index_return_train_and_test, out.sample = out.sample.length, 
+                 fit.control = list(eval.se = FALSE),
+                 solver = "solnp") #list(eval.se = FALSE) to drastically reduce computational time
+  f_dcc_roll <- dccforecast(dccfit.dummy, n.ahead = 1, n.roll = n.roll.length)
+  model2_fcov_10 <- append(model2_fcov_10, f_dcc_roll@mforecast$H)
+  for (j in 1:(n.roll.length + 1)) {
+    model2_fret_10 <- append(model2_fret_10, list(f_dcc_roll@mforecast$mu[, , j]))
+  }
+}
+```
+
+Model 3: DCC-gjrGARCH(1,1)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+
+#Refit Specifications
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return and covariance matrix
+model3_fcov_10 <- c()
+model3_fret_10 <- c()
+
+#univariate volatility model specification (such that dccfit does not try to fit univariate and multivariate simultaneously)
+uspec.n <- multispec(replicate(37, ugarchspec(variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)), 
+                                              mean.model = list(armaOrder = c(0, 0)),
+                                              distribution.model = "std"))) #specifies GARCH(1,1) model, and replicate 37 times
+#specifying correlation specifications
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), model = "DCC", distribution = "mvt") #most standard 'dccOrder = c(1, 1)' specification
+
+#loop for DCC model
+for (i in 1:refit.num) {
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  dccfit.dummy <- dccfit(spec1, data = index_return_train_and_test, out.sample = out.sample.length, 
+                 fit.control = list(eval.se = FALSE),
+                 solver = "solnp") #list(eval.se = FALSE) to drastically reduce computational time
+  f_dcc_roll <- dccforecast(dccfit.dummy, n.ahead = 1, n.roll = n.roll.length)
+  model3_fcov_10 <- append(model3_fcov_10, f_dcc_roll@mforecast$H)
+  for (j in 1:(n.roll.length + 1)) {
+    model3_fret_10 <- append(model3_fret_10, list(f_dcc_roll@mforecast$mu[, , j]))
+  }
+}
+```
+
+Model 4: aDCC-GARCH(1,1) (norm, mvt)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+
+#Refit Specifications
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return and covariance matrix
+model4_fcov_10 <- c()
+model4_fret_10 <- c()
+
+
+#univariate volatility model specification (such that dccfit does not try to fit univariate and multivariate simultaneously)
+uspec.n <- multispec(replicate(37, ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0)),
+                                              distribution.model = "norm"))) #specifies GARCH(1,1) model, and replicate 37 times
+#specifying correlation specifications
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), model = "aDCC", distribution = "mvt") #most standard 'dccOrder = c(1, 1)' specification
+
+#loop for aDCC model
+for (i in 1:refit.num) {
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  dccfit.dummy <- dccfit(spec1, data = index_return_train_and_test, out.sample = out.sample.length, 
+                 fit.control = list(eval.se = FALSE),
+                 solver = "solnp") #list(eval.se = FALSE) to drastically reduce computational time
+  f_dcc_roll <- dccforecast(dccfit.dummy, n.ahead = 1, n.roll = n.roll.length)
+  model4_fcov_10 <- append(model4_fcov_10, f_dcc_roll@mforecast$H)
+  for (j in 1:(n.roll.length + 1)) {
+    model4_fret_10 <- append(model4_fret_10, list(f_dcc_roll@mforecast$mu[, , j]))
+  }
+}
+```
+
+Model 5: aDCC-gjrGARCH(1,1)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+
+#Refit Specifications
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return and covariance matrix
+model5_fcov_10 <- c()
+model5_fret_10 <- c()
+
+#univariate volatility model specification (such that dccfit does not try to fit univariate and multivariate simultaneously)
+uspec.n <- multispec(replicate(37, ugarchspec(variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)), 
+                                              mean.model = list(armaOrder = c(0, 0)),
+                                              distribution.model = "std"))) #specifies GARCH(1,1) model, and replicate 37 times
+#specifying correlation specifications
+spec1 <- dccspec(uspec = uspec.n, dccOrder = c(1, 1), model = "aDCC", distribution = "mvt") #most standard 'dccOrder = c(1, 1)' specification
+
+#loop for DCC model
+for (i in 1:refit.num) {
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  dccfit.dummy <- dccfit(spec1, data = index_return_train_and_test, out.sample = out.sample.length, 
+                 fit.control = list(eval.se = FALSE),
+                 solver = "solnp") #list(eval.se = FALSE) to drastically reduce computational time
+  f_dcc_roll <- dccforecast(dccfit.dummy, n.ahead = 1, n.roll = n.roll.length)
+  model5_fcov_10 <- append(model5_fcov_10, f_dcc_roll@mforecast$H)
+  for (j in 1:(n.roll.length + 1)) {
+    model5_fret_10 <- append(model5_fret_10, list(f_dcc_roll@mforecast$mu[, , j]))
+  }
+}
+```
+
+Model 6: PCA-GARCH(1,1) (norm)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+library(stats)
+
+#Refit Specifications
+#refit <- c(0, 1000, 1107)
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return covariance matrix
+model6_fcov_10 <- c()
+model6_fret_10 <- c()
+
+#univariate volatility model specification
+pca.spec.1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "norm")
+pca.spec.2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "norm")
+pca.spec.3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "norm")
+#loop for PCA
+
+for (i in 1:refit.num) {
+  training_data_size <- 2870 + refit[i]
+  testing_data_start <- 2870 + refit[i] + 1
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  
+  #Training Data
+  pca_train <- prcomp(index_return_train_and_test[1:training_data_size,], scale = FALSE)
+  #Obtain Principle Components from Training Data
+  pcs_train <- as.xts(pca_train$x[ ,1:3])
+  #Use Eigenvectors to obtain PCs for out-of-sample data and combine with training data
+  pcs_test <- scale(index_return_train_and_test[testing_data_start:3977, ], center = pca_train$center, scale = pca_train$scale) %*% pca_train$rotation
+  pcs_test <- xts(pcs_test, order.by = index(index_return_train_and_test[testing_data_start:3977, ]))
+  pcs_train_and_test <- as.xts(rbind(pcs_train, pcs_test[ ,1:3]))
+  index(pcs_train_and_test) <- as.Date(index(pcs_train_and_test))
+  
+  #GARCH Fit and Forecast
+  pca1_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,1],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca2_fit <- ugarchfit(pca.spec.2, data = pcs_train_and_test[ ,2],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca3_fit <- ugarchfit(pca.spec.3, data = pcs_train_and_test[ ,3],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca1_roll_1 <- ugarchforecast(pca1_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_2 <- ugarchforecast(pca2_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_3 <- ugarchforecast(pca3_fit, n.ahead = 1, n.roll = n.roll.length)
+  
+  #Generate estimated covariance matrix
+  for (j in 1:(n.roll.length + 1)) {
+    L <- pca_train$rotation[ ,1:3]
+    sigma_t <- c(pca1_roll_1@forecast$sigmaFor[j],
+               pca1_roll_2@forecast$sigmaFor[j],
+               pca1_roll_3@forecast$sigmaFor[j])
+    D_t2 <- (diag(sigma_t))^2
+    V_t <- L %*% D_t2 %*% t(L)
+    V_t <- as.matrix(V_t)
+    model6_fcov_10 <- append(model6_fcov_10, list(V_t))
+    
+    mu_t <- c(pca1_roll_1@forecast$seriesFor[j],
+            pca1_roll_2@forecast$seriesFor[j],
+            pca1_roll_3@forecast$seriesFor[j])
+    R_t <- (L %*% mu_t) + pca_train$center
+    R_t <- as.matrix(R_t)
+    model6_fret_10 <- append(model6_fret_10, list(R_t))
+  }
+}
+```
+
+Model 7: PCA-GARCH(1,1) (std)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+library(stats)
+
+#Refit Specifications
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return covariance matrix
+model7_fcov_10 <- c()
+model7_fret_10 <- c()
+
+#univariate volatility model specification
+pca.spec.1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+pca.spec.2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+pca.spec.3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+#loop for PCA
+
+for (i in 1:refit.num) {
+  training_data_size <- 2870 + refit[i]
+  testing_data_start <- 2870 + refit[i] + 1
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  
+  #Training Data
+  pca_train <- prcomp(index_return_train_and_test[1:training_data_size,], scale = FALSE)
+  #Obtain Principle Components from Training Data
+  pcs_train <- as.xts(pca_train$x[ ,1:3])
+  #Use Eigenvectors to obtain PCs for out-of-sample data and combine with training data
+  pcs_test <- scale(index_return_train_and_test[testing_data_start:3977, ], center = pca_train$center, scale = pca_train$scale) %*% pca_train$rotation
+  pcs_test <- xts(pcs_test, order.by = index(index_return_train_and_test[testing_data_start:3977, ]))
+  pcs_train_and_test <- as.xts(rbind(pcs_train, pcs_test[ ,1:3]))
+  index(pcs_train_and_test) <- as.Date(index(pcs_train_and_test))
+  
+  #GARCH Fit and Forecast
+  pca1_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,1],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca2_fit <- ugarchfit(pca.spec.2, data = pcs_train_and_test[ ,2],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca3_fit <- ugarchfit(pca.spec.3, data = pcs_train_and_test[ ,3],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca1_roll_1 <- ugarchforecast(pca1_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_2 <- ugarchforecast(pca2_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_3 <- ugarchforecast(pca3_fit, n.ahead = 1, n.roll = n.roll.length)
+  
+  #Generate estimated covariance matrix
+  for (j in 1:(n.roll.length + 1)) {
+    L <- pca_train$rotation[ ,1:3]
+    sigma_t <- c(pca1_roll_1@forecast$sigmaFor[j],
+               pca1_roll_2@forecast$sigmaFor[j],
+               pca1_roll_3@forecast$sigmaFor[j])
+    D_t2 <- (diag(sigma_t))^2
+    V_t <- L %*% D_t2 %*% t(L)
+    V_t <- as.matrix(V_t)
+    model7_fcov_10 <- append(model7_fcov_10, list(V_t))
+    
+    mu_t <- c(pca1_roll_1@forecast$seriesFor[j],
+            pca1_roll_2@forecast$seriesFor[j],
+            pca1_roll_3@forecast$seriesFor[j])
+    R_t <- (L %*% mu_t) + pca_train$center
+    R_t <- as.matrix(R_t)
+    model7_fret_10 <- append(model7_fret_10, list(R_t))
+  }
+}
+```
+
+Model 8: PCA-GARCH(1,1) (9CP)
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+library(stats)
+
+#Refit Specifications
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return covariance matrix
+model8_fcov_10 <- c()
+model8_fret_10 <- c()
+
+#univariate volatility model specification
+pca.spec.1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+
+#loop for PCA
+
+for (i in 1:refit.num) {
+  training_data_size <- 2870 + refit[i]
+  testing_data_start <- 2870 + refit[i] + 1
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  
+  #Training Data
+  pca_train <- prcomp(index_return_train_and_test[1:training_data_size,], scale = FALSE)
+  #Obtain Principle Components from Training Data
+  pcs_train <- as.xts(pca_train$x[ ,1:9])
+  #Use Eigenvectors to obtain PCs for out-of-sample data and combine with training data
+  pcs_test <- scale(index_return_train_and_test[testing_data_start:3977, ], center = pca_train$center, scale = pca_train$scale) %*% pca_train$rotation
+  pcs_test <- xts(pcs_test, order.by = index(index_return_train_and_test[testing_data_start:3977, ]))
+  pcs_train_and_test <- as.xts(rbind(pcs_train, pcs_test[ ,1:9]))
+  index(pcs_train_and_test) <- as.Date(index(pcs_train_and_test))
+  
+  #GARCH Fit and Forecast
+  pca1_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,1],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca2_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,2],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca3_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,3],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca4_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,4],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca5_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,5],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca6_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,6],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca7_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,7],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca8_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,8],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca9_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,9],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca1_roll_1 <- ugarchforecast(pca1_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_2 <- ugarchforecast(pca2_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_3 <- ugarchforecast(pca3_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_4 <- ugarchforecast(pca4_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_5 <- ugarchforecast(pca5_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_6 <- ugarchforecast(pca6_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_7 <- ugarchforecast(pca7_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_8 <- ugarchforecast(pca8_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_9 <- ugarchforecast(pca9_fit, n.ahead = 1, n.roll = n.roll.length)
+  
+  #Generate estimated covariance matrix
+  for (j in 1:(n.roll.length + 1)) {
+    L <- pca_train$rotation[ ,1:9]
+    sigma_t <- c(pca1_roll_1@forecast$sigmaFor[j],
+               pca1_roll_2@forecast$sigmaFor[j],
+               pca1_roll_3@forecast$sigmaFor[j],
+               pca1_roll_4@forecast$sigmaFor[j],
+               pca1_roll_5@forecast$sigmaFor[j],
+               pca1_roll_6@forecast$sigmaFor[j],
+               pca1_roll_7@forecast$sigmaFor[j],
+               pca1_roll_8@forecast$sigmaFor[j],
+               pca1_roll_9@forecast$sigmaFor[j])
+    D_t2 <- (diag(sigma_t))^2
+    V_t <- L %*% D_t2 %*% t(L)
+    V_t <- as.matrix(V_t)
+    model8_fcov_10 <- append(model8_fcov_10, list(V_t))
+    
+    mu_t <- c(pca1_roll_1@forecast$seriesFor[j],
+            pca1_roll_2@forecast$seriesFor[j],
+            pca1_roll_3@forecast$seriesFor[j],
+            pca1_roll_4@forecast$seriesFor[j],
+            pca1_roll_5@forecast$seriesFor[j],
+            pca1_roll_6@forecast$seriesFor[j],
+            pca1_roll_7@forecast$seriesFor[j],
+            pca1_roll_8@forecast$seriesFor[j],
+            pca1_roll_9@forecast$seriesFor[j])
+    R_t <- (L %*% mu_t) + pca_train$center
+    R_t <- as.matrix(R_t)
+    model8_fret_10 <- append(model8_fret_10, list(R_t))
+  }
+}
+```
+
+Model 9: HARMA-PCA-GARCH(1,1) 
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+library(stats)
+
+#Refit Specifications
+#refit <- c(0, 1000, 1107)
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return covariance matrix
+model9_fcov_10 <- c()
+model9_fret_10 <- c()
+
+#univariate volatility model specification
+pca.spec.1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(1, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+pca.spec.2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(1, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+pca.spec.3 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+#loop for PCA
+
+for (i in 1:refit.num) {
+  training_data_size <- 2870 + refit[i]
+  testing_data_start <- 2870 + refit[i] + 1
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  
+  #Training Data
+  pca_train <- prcomp(index_return_train_and_test[1:training_data_size,], scale = FALSE)
+  #Obtain Principle Components from Training Data
+  pcs_train <- as.xts(pca_train$x[ ,1:3])
+  #Use Eigenvectors to obtain PCs for out-of-sample data and combine with training data
+  pcs_test <- scale(index_return_train_and_test[testing_data_start:3977, ], center = pca_train$center, scale = pca_train$scale) %*% pca_train$rotation
+  pcs_test <- xts(pcs_test, order.by = index(index_return_train_and_test[testing_data_start:3977, ]))
+  pcs_train_and_test <- as.xts(rbind(pcs_train, pcs_test[ ,1:3]))
+  index(pcs_train_and_test) <- as.Date(index(pcs_train_and_test))
+  
+  #GARCH Fit and Forecast
+  pca1_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,1],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca2_fit <- ugarchfit(pca.spec.2, data = pcs_train_and_test[ ,2],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca3_fit <- ugarchfit(pca.spec.3, data = pcs_train_and_test[ ,3],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca1_roll_1 <- ugarchforecast(pca1_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_2 <- ugarchforecast(pca2_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_3 <- ugarchforecast(pca3_fit, n.ahead = 1, n.roll = n.roll.length)
+  
+  #Generate estimated covariance matrix
+  for (j in 1:(n.roll.length + 1)) {
+    L <- pca_train$rotation[ ,1:3]
+    sigma_t <- c(pca1_roll_1@forecast$sigmaFor[j],
+               pca1_roll_2@forecast$sigmaFor[j],
+               pca1_roll_3@forecast$sigmaFor[j])
+    D_t2 <- (diag(sigma_t))^2
+    V_t <- L %*% D_t2 %*% t(L)
+    V_t <- as.matrix(V_t)
+    model9_fcov_10 <- append(model9_fcov_10, list(V_t))
+    
+    mu_t <- c(pca1_roll_1@forecast$seriesFor[j],
+            pca1_roll_2@forecast$seriesFor[j],
+            pca1_roll_3@forecast$seriesFor[j])
+    R_t <- (L %*% mu_t) + pca_train$center
+    R_t <- as.matrix(R_t)
+    model9_fret_10 <- append(model9_fret_10, list(R_t))
+  }
+}
+```
+
+Model 10: HARMA-PCA-gjrGARCH(1,1) 
+```{r}
+library(rugarch)
+library(rmgarch)
+library(xts)
+library(stats)
+
+#Refit Specifications
+#refit <- c(0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1107)
+#refit <- c(0, (1:36)*30, 1107) #refit every 30 days
+refit <- c(0, (1:110)*10, 1107) #refit every 10 days
+#refit <- c(0:1107) #refit every day
+refit.num <- length(refit) - 1
+
+#storing rolling return covariance matrix
+model10_fcov_10 <- c()
+model10_fret_10 <- c()
+
+#univariate volatility model specification
+pca.spec.1 <- ugarchspec(variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(1, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+pca.spec.2 <- ugarchspec(variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(1, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+pca.spec.3 <- ugarchspec(variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)),
+                                              mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                                              distribution.model = "std")
+#loop for PCA
+
+for (i in 1:refit.num) {
+  training_data_size <- 2870 + refit[i]
+  testing_data_start <- 2870 + refit[i] + 1
+  out.sample.length <- 1107 - refit[i]
+  n.roll.length <- refit[i+1] - refit[i] - 1
+  
+  #Training Data
+  pca_train <- prcomp(index_return_train_and_test[1:training_data_size,], scale = FALSE)
+  #Obtain Principle Components from Training Data
+  pcs_train <- as.xts(pca_train$x[ ,1:3])
+  #Use Eigenvectors to obtain PCs for out-of-sample data and combine with training data
+  pcs_test <- scale(index_return_train_and_test[testing_data_start:3977, ], center = pca_train$center, scale = pca_train$scale) %*% pca_train$rotation
+  pcs_test <- xts(pcs_test, order.by = index(index_return_train_and_test[testing_data_start:3977, ]))
+  pcs_train_and_test <- as.xts(rbind(pcs_train, pcs_test[ ,1:3]))
+  index(pcs_train_and_test) <- as.Date(index(pcs_train_and_test))
+  
+  #GARCH Fit and Forecast
+  pca1_fit <- ugarchfit(pca.spec.1, data = pcs_train_and_test[ ,1],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca2_fit <- ugarchfit(pca.spec.2, data = pcs_train_and_test[ ,2],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca3_fit <- ugarchfit(pca.spec.3, data = pcs_train_and_test[ ,3],
+                      out.sample = out.sample.length,
+                      solver = "solnp")
+  pca1_roll_1 <- ugarchforecast(pca1_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_2 <- ugarchforecast(pca2_fit, n.ahead = 1, n.roll = n.roll.length)
+  pca1_roll_3 <- ugarchforecast(pca3_fit, n.ahead = 1, n.roll = n.roll.length)
+  
+  #Generate estimated covariance matrix
+  for (j in 1:(n.roll.length + 1)) {
+    L <- pca_train$rotation[ ,1:3]
+    sigma_t <- c(pca1_roll_1@forecast$sigmaFor[j],
+               pca1_roll_2@forecast$sigmaFor[j],
+               pca1_roll_3@forecast$sigmaFor[j])
+    D_t2 <- (diag(sigma_t))^2
+    V_t <- L %*% D_t2 %*% t(L)
+    V_t <- as.matrix(V_t)
+    model10_fcov_10 <- append(model10_fcov_10, list(V_t))
+    
+    mu_t <- c(pca1_roll_1@forecast$seriesFor[j],
+            pca1_roll_2@forecast$seriesFor[j],
+            pca1_roll_3@forecast$seriesFor[j])
+    R_t <- (L %*% mu_t) + pca_train$center
+    R_t <- as.matrix(R_t)
+    model10_fret_10 <- append(model10_fret_10, list(R_t))
+  }
+}
+```
